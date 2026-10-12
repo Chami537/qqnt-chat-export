@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Mapping
+
+from .errors import SafeFailure
 
 
 SAFE_REPORT_KEYS = frozenset({"stage", "code", "qq_version", "adapter", "status", "message_count", "time_range", "quick_check"})
@@ -32,5 +36,18 @@ def _safe_value(key: str, value: object) -> object:
 
 def write_safe_report(path: Path, report: Mapping[str, object]) -> None:
     safe = {key: _safe_value(key, value) for key, value in report.items()}
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(safe, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temporary: Path | None = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", newline="\n", prefix=f".{path.name}.",
+            suffix=".tmp", dir=path.parent, delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(json.dumps(safe, ensure_ascii=False, indent=2) + "\n")
+        os.replace(temporary, path)
+    except OSError:
+        raise SafeFailure("output", "write_failed", "无法写入安全报告") from None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)

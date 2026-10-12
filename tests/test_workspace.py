@@ -43,3 +43,10 @@ def test_cleanup_preserves_foreign_file_added_to_marked_workspace(tmp_path: Path
     with pytest.raises(SafeFailure, match="非工具文件"):
         workspace.close(success=False)
     assert foreign.read_text(encoding="utf-8") == "private"
+
+
+def test_workspace_refuses_output_directory_as_work_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("qqnt_export.paths.system_drive", lambda: Path("Z:/"))
+    with pytest.raises(SafeFailure):
+        Workspace.create(tmp_path, tmp_path, keep=False)
+    assert not (tmp_path / ".qqnt-export-workspace.json").exists()

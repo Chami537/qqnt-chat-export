@@ -39,6 +39,9 @@ class Workspace:
             parent = output / ".qqnt-export-workspaces"
             root = parent / uuid.uuid4().hex
         else:
+            requested = requested_work_dir.expanduser().resolve()
+            if output == requested or output.is_relative_to(requested):
+                raise SafeFailure("workspace", "overlapping_output", "工作目录不能包含输出目录")
             root = validate_non_system_directory(requested_work_dir, source_root=source_root)
             if any(root.iterdir()):
                 raise SafeFailure("workspace", "occupied", "工作目录必须为空")

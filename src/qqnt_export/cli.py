@@ -103,8 +103,8 @@ def _select_adapter(source: DatabaseSource, output: Path | None = None) -> QQNT9
 
 
 def run_doctor(args: argparse.Namespace) -> int:
-    output = validate_non_system_directory(args.output) if args.output is not None else None
     source = _source_from_args(args)
+    output = validate_non_system_directory(args.output, source_root=source.db_path.parents[2]) if args.output is not None else None
     adapter = _select_adapter(source, output)
     if output is not None:
         write_safe_report(output / "doctor_report.json", {
@@ -116,10 +116,10 @@ def run_doctor(args: argparse.Namespace) -> int:
 
 
 def _prepare(args: argparse.Namespace):
-    output = validate_non_system_directory(args.output)
     source = _source_from_args(args)
-    adapter = _select_adapter(source, output)
     source_root = source.db_path.parents[2]
+    output = validate_non_system_directory(args.output, source_root=source_root)
+    adapter = _select_adapter(source, output)
     workspace = Workspace.create(output, args.work_dir, keep=args.keep_workdir, source_root=source_root)
     return output, source, adapter, workspace
 

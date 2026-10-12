@@ -48,7 +48,12 @@ def export_conversation(
         raise SafeFailure("output", "invalid_conversation", "会话类型无效")
     digest = hashlib.sha256(conversation.selector.encode("utf-8")).hexdigest()[:12]
     directory = output_dir.resolve() / f"{conversation.kind}_{digest}"
-    directory.mkdir(parents=True, exist_ok=True)
+    try:
+        directory.mkdir()
+    except FileExistsError:
+        raise SafeFailure("output", "already_exists", "该会话的导出目录已存在，请另选输出目录") from None
+    except OSError:
+        raise SafeFailure("output", "write_failed", "无法创建导出目录，请检查空间和权限") from None
     json_path = directory / "chat_export.json"
     markdown_path = directory / "chat_export.md"
     if json_path.exists() or markdown_path.exists():

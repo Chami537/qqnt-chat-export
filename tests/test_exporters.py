@@ -1,4 +1,7 @@
 import json
+import hashlib
+import os
+import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -53,3 +56,23 @@ def test_export_refuses_existing_destination(tmp_path: Path) -> None:
     export_conversation(tmp_path, conversation(), two_messages())
     with pytest.raises(SafeFailure, match="已存在"):
         export_conversation(tmp_path, conversation(), two_messages())
+
+
+def test_export_refuses_linked_conversation_directory(tmp_path: Path) -> None:
+    output = tmp_path / "output"
+    target = tmp_path / "outside"
+    output.mkdir()
+    target.mkdir()
+    digest = hashlib.sha256(b"255").hexdigest()[:12]
+    link = output / f"c2c_{digest}"
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        if os.name != "nt":
+            pytest.skip("directory links unavailable")
+        result = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True)
+        if result.returncode:
+            pytest.skip("directory junctions unavailable")
+    with pytest.raises(SafeFailure):
+        export_conversation(output, conversation(), two_messages())
+    assert not list(target.iterdir())

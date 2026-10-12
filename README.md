@@ -45,6 +45,8 @@ qqnt-export cleanup --work-dir E:\QQExports\.qqnt-export-workspaces\<run-id>
 
 `conversations` creates a private `conversation_index.json` containing selectors, titles, and counts. Keep this file local. `cleanup` removes only a directory carrying the tool's ownership marker. Normal runs remove their temporary workspace automatically. `--keep-workdir` preserves the encrypted and plaintext working databases for troubleshooting and may use several gigabytes.
 
+If you set `--work-dir`, choose an empty directory separate from `--output`. Cleanup refuses a work directory containing files or directories it did not create; remove or move those items yourself before retrying cleanup.
+
 All output and work directories must be on a non-system drive. The original QQ database may be on C: because it is only read. To avoid a changing snapshot, run the export while QQ is idle; if QQ writes during copying, the command stops and you can retry.
 
 ## Content and compatibility limits

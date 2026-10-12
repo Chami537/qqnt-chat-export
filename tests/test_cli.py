@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from qqnt_export import cli
+from qqnt_export.adapters.qqnt_9_9_27 import QQNT9927Adapter
 from qqnt_export.errors import SafeFailure
 from qqnt_export.models import DatabaseSource
 
@@ -70,3 +71,15 @@ def test_one_command_export_uses_snapshot_and_cleans_workspace(
     assert not list(output.rglob("*.db"))
     terminal = capsys.readouterr().out
     assert "123456789" not in terminal and "987654321" not in terminal
+
+
+def test_export_rejects_source_tree_output_without_creating_it(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    source_root = tmp_path / "synthetic-account"
+    source_root.mkdir()
+    source_path = source_root / "nt_qq" / "nt_db" / "nt_msg.db"
+    output = source_root / "new-exports"
+    monkeypatch.setattr("qqnt_export.paths.system_drive", lambda: Path("Z:/"))
+    monkeypatch.setattr(cli, "_source_from_args", lambda args: DatabaseSource(source_path, "synthetic", "9.9.27", 7))
+    monkeypatch.setattr(cli, "_select_adapter", lambda source, output: QQNT9927Adapter())
+    assert cli.main(["export", "--peer", "123", "--output", str(output)]) == 16
+    assert not output.exists()
