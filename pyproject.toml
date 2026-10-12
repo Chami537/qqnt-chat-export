@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Local, read-only QQNT chat export CLI"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "MIT"}
+license = "MIT"
 authors = [{name = "QQNT Chat Export contributors"}]
 classifiers = ["Programming Language :: Python :: 3", "Operating System :: Microsoft :: Windows"]
 dependencies = []
@@ -22,6 +22,9 @@ qqnt-export = "qqnt_export.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+qqnt_export = ["resources/*.json", "adapters/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

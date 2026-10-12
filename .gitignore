@@ -12,6 +12,8 @@ dist/
 *.wal
 *.shm
 *.key
+*.sqlite
 chat_export.json
 chat_export.md
+conversation_index.json
 *_report.json
