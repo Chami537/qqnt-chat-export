@@ -1,7 +1,7 @@
-# Security and privacy
+# 安全与隐私
 
-This tool accesses private local chat data and reads the selected QQ process memory in read-only mode to validate the database key. Run it only on your own computer and only for data you are authorized to export. Temporary plaintext database files are removed by default. `--keep-workdir` retains them and should be used only for deliberate local troubleshooting.
+本工具会访问本机私人聊天数据，并以只读方式读取所选 QQ 进程内存，以验证数据库密钥。请只在自己的电脑上运行，并且只导出你有权访问的数据。临时明文数据库默认会被清理；`--keep-workdir` 会保留它们，仅应在有意进行本地排查时使用。
 
-Do not attach a real `nt_msg.db`, WAL/SHM file, key, `conversation_index.json`, `chat_export.json`, or `chat_export.md` to public issues. A safe report can include QQ version, adapter ID, failure stage/code, and counts. Remove account numbers, display names, file paths containing personal identifiers, and message text before sharing command output.
+不要在公开 issue 中附上真实的 `nt_msg.db`、WAL/SHM 文件、密钥、`conversation_index.json`、`chat_export.json` 或 `chat_export.md`。安全的技术报告可以包含 QQ 版本、适配器 ID、失败阶段与代码、数量。分享命令输出前，请去除账号、昵称、含个人标识的文件路径和消息正文。
 
-If you find an issue that could expose private data, report the minimal reproduction with synthetic fixtures. No cloud service, telemetry, or automatic upload is part of this tool.
+如果发现可能泄露私人数据的问题，请用合成样例提供最小复现。本工具不包含云服务、遥测或自动上传功能。

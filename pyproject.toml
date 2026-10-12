@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "qqnt-chat-export"
 version = "0.1.0"
-description = "Local, read-only QQNT chat export CLI"
+description = "本地只读的 QQNT 聊天记录导出命令行工具"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-authors = [{name = "QQNT Chat Export contributors"}]
+authors = [{name = "QQNT 聊天记录导出工具贡献者"}]
 classifiers = ["Programming Language :: Python :: 3", "Operating System :: Microsoft :: Windows"]
 dependencies = []
 

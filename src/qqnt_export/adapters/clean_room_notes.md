@@ -1,3 +1,3 @@
-# Adapter research provenance
+# 适配器研究来源
 
-The 9.9.27 adapter is based on independent observations from a user's own QQNT installation and generated fixtures. Repository code, generated Protobuf schemas, and snippets from GPLv3 references are not copied or vendored here. Any new adapter must record observed format facts, the tested QQ build, and synthetic tests without including personal data or secret material.
+9.9.27 适配器基于对用户本人 QQNT 安装环境的独立观察和生成的测试样例。本仓库没有复制或引入 GPLv3 参考项目的代码、生成的 Protobuf schema 或代码片段。新增适配器时，必须记录观察到的格式事实、已测试的 QQ 构建版本及合成数据测试，且不得包含个人数据或密钥材料。

@@ -1,9 +1,9 @@
-# Contributing
+# 贡献指南
 
-This project has one verified adapter, for Windows QQ 9.9.27. New QQ versions need their own adapter and synthetic tests. Keep QQ-version-specific table names, fields, decryption parameters, and encoded-message mappings out of the core CLI.
+目前项目只验证了 Windows QQ 9.9.27 适配器。支持新的 QQ 版本时，应新增独立适配器和合成数据测试。与具体版本有关的表名、字段、解密参数和消息编码映射应留在适配器内，不要放入核心 CLI。
 
-Use only data you are authorized to inspect. Do not commit real databases, WAL/SHM files, keys, chat exports, nicknames, QQ numbers, or screenshots with personal data. Tests must create small synthetic SQLite databases and encoded messages. Sanitized structure counts and field numbers are enough for a public compatibility report.
+只使用你有权检查的数据。不要提交真实数据库、WAL/SHM 文件、密钥、聊天导出文件、昵称、QQ 号或包含个人信息的截图。测试必须生成小型合成 SQLite 数据库和编码消息。公开兼容性报告只需提供脱敏的结构数量与字段编号。
 
-The adapter code must be independently written. GPLv3 reference projects may inform research, but their source or generated schemas must not be copied into this MIT-licensed repository. Record observed facts and their tested QQ build in `src/qqnt_export/adapters/clean_room_notes.md`.
+适配器代码必须独立编写。可以参考 GPLv3 项目了解研究方向，但不得将其源码或生成的 schema 复制到这个采用 MIT 许可的仓库。请在 `src/qqnt_export/adapters/clean_room_notes.md` 中记录观察到的事实及对应的已测试 QQ 构建版本。
 
-Run `python -m pytest -q`, `python -m build`, and inspect `git ls-files` before proposing a change. Use a local worktree and keep temporary exports outside the repository.
+提交修改前，请运行 `python -m pytest -q` 和 `python -m build`，并检查 `git ls-files`。建议使用本地工作树，将临时导出文件放在仓库外。

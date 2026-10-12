@@ -1,41 +1,41 @@
-# QQNT Chat Export
+# QQNT 聊天记录导出工具
 
-A local Windows command-line tool for exporting your own QQNT conversations to UTF-8 JSON and Markdown. The first adapter supports **Windows QQ 9.9.27**. Other versions stop at a compatibility check; they are not claimed as supported.
+这是一个在 Windows 本地运行的命令行工具，可将你有权访问的 QQNT 聊天记录导出为 UTF-8 编码的 JSON 和 Markdown。首个适配器仅支持 **Windows QQ 9.9.27**；其他版本会在兼容性检查阶段停止，不保证能够导出。
 
-The tool reads the original QQ database without writing to it. It copies the database and its WAL/SHM companions to a work directory on a non-system drive, decrypts that copy, and removes the temporary database files after the command completes. It reads decryption material from the already running local QQ process and never prints or writes the key. There is no network upload or QQ login automation.
+工具不会写入原始 QQ 数据库。它先将数据库及对应的 WAL、SHM 文件复制到非系统盘的工作目录，再对副本解密和分析；命令结束后默认清理临时数据库。解密材料只在本机已登录的 QQ 进程内存中读取和验证，不会打印或写入文件。工具不会上传数据，也不会自动登录 QQ。
 
-## Install from this repository
+## 从仓库安装
 
-Use Python 3.11 or newer on Windows. Create the virtual environment on a non-system drive if C: space is limited:
+需要 Windows 和 Python 3.11 或更新版本。如果 C 盘空间有限，请把虚拟环境建在其他盘。以下命令在克隆后的仓库目录中运行：
 
 ```powershell
 py -3.11 -m venv E:\QQNTExportVenv
 & E:\QQNTExportVenv\Scripts\python.exe -m pip install ".[decrypt]"
 ```
 
-The `decrypt` extra installs `sqlcipher3`. Installation can require a compatible Windows wheel or local build tools. Run from the cloned repository directory, or install the built wheel.
+`decrypt` 可选依赖会安装 `sqlcipher3`。安装时可能需要兼容的 Windows wheel，或本机编译工具。也可以安装项目构建出的 wheel。
 
-## One-command export
+## 一条命令导出
 
-Open and log in to QQ before running the command. Choose one private QQ number or one group number:
+先打开并登录 QQ，再选择一个私聊对象的 QQ 号或一个群号：
 
 ```powershell
 & E:\QQNTExportVenv\Scripts\qqnt-export.exe export --peer 123456789 --output E:\QQExports
 & E:\QQNTExportVenv\Scripts\qqnt-export.exe export --group 123456789 --output E:\QQExports
 ```
 
-The CLI reports only the message count and a folder with a hashed selector. The folder contains `chat_export.json`, `chat_export.md`, and `export_report.json`. The JSON and Markdown are private chat data; the report contains only technical status and counts. Existing exports are never overwritten.
+终端只显示消息数量和经过哈希处理的会话目录名。目录中包含 `chat_export.json`、`chat_export.md` 和 `export_report.json`。前两个文件含有私人聊天数据；报告只包含技术状态和数量。工具不会覆盖已有的导出文件。
 
-If QQ data has been moved away from the usual Documents folder, supply the `Tencent Files` root or the exact database path in the same command:
+如果 QQ 数据已从默认的“文档”目录移走，可以指定 `Tencent Files` 根目录，或直接指定数据库文件：
 
 ```powershell
 qqnt-export export --peer 123456789 --data-root "D:\MovedData\Tencent Files" --output E:\QQExports
 qqnt-export export --peer 123456789 --source "D:\MovedData\Tencent Files\123456789\nt_qq\nt_db\nt_msg.db" --output E:\QQExports
 ```
 
-`QQNT_DATA_ROOT` can also name a custom `Tencent Files` directory. When several account directories are found, use `--account <your QQ number>`. If several QQ processes are running, `--pid` selects the process carrying the active database key. Use `qqnt-export doctor --source <path>` to test version and header compatibility without making a database copy.
+也可以用环境变量 `QQNT_DATA_ROOT` 指定自定义的 `Tencent Files` 目录。找到多个账号目录时，用 `--account <你的 QQ 号>` 选择账号；运行多个 QQ 进程时，用 `--pid` 选择持有当前数据库密钥的进程。运行 `qqnt-export doctor --source <数据库路径>` 可只检查版本与文件头兼容性，不复制数据库。
 
-## Other commands
+## 其他命令
 
 ```powershell
 qqnt-export doctor --source "D:\MovedData\Tencent Files\123456789\nt_qq\nt_db\nt_msg.db"
@@ -43,21 +43,21 @@ qqnt-export conversations --source "D:\MovedData\Tencent Files\123456789\nt_qq\n
 qqnt-export cleanup --work-dir E:\QQExports\.qqnt-export-workspaces\<run-id>
 ```
 
-`conversations` creates a private `conversation_index.json` containing selectors, titles, and counts. Keep this file local. `cleanup` removes only a directory carrying the tool's ownership marker. Normal runs remove their temporary workspace automatically. `--keep-workdir` preserves the encrypted and plaintext working databases for troubleshooting and may use several gigabytes.
+`conversations` 会生成包含会话选择值、标题和消息数量的 `conversation_index.json`，请将它作为私人文件保存在本地。`cleanup` 只清理带有工具所有权标记的工作目录。正常运行时会自动清理临时目录；使用 `--keep-workdir` 则会保留加密副本和明文数据库，可能占用数 GB 空间。
 
-If you set `--work-dir`, choose an empty directory separate from `--output`. Cleanup refuses a work directory containing files or directories it did not create; remove or move those items yourself before retrying cleanup.
+如果指定 `--work-dir`，请选择与 `--output` 不同的空目录。工作目录中若出现工具未创建的文件或子目录，清理会拒绝删除整个目录；请自行移走这些内容，再重新执行清理。
 
-All output and work directories must be on a non-system drive. The original QQ database may be on C: because it is only read. To avoid a changing snapshot, run the export while QQ is idle; if QQ writes during copying, the command stops and you can retry.
+输出目录和工作目录必须位于非系统盘。原始 QQ 数据库可以位于 C 盘，因为工具只读取它。导出时尽量让 QQ 保持空闲；若 QQ 在复制期间修改了数据库或 WAL 文件，命令会停止，可稍后重试。
 
-## Content and compatibility limits
+## 内容与兼容性限制
 
-The parser uses the table and field layout observed for QQ 9.9.27 and verifies that layout after decryption. It extracts verified UTF-8 text from the encoded message body. Known non-text types use markers such as `[媒体消息]`; unknown or malformed payloads become `[未识别消息结构]` and bounded structural metadata in JSON. It does not invent text for unknown bytes. Timestamps that are missing or zero are exported as JSON `null` and under an `未知日期` Markdown heading.
+解析器使用在 QQ 9.9.27 中观察到的表和字段布局，并在解密后验证数据库结构。它只提取已确认的 UTF-8 文本。已知的非文本消息会显示如 `[媒体消息]` 的标记；未知或损坏的内容会显示 `[未识别消息结构]`，并在 JSON 中保留有界的结构信息，不会将未知字节猜成正文。缺失或为零的时间戳在 JSON 中为 `null`，在 Markdown 中归入“未知日期”。
 
-This first release selects private conversations by numeric `40030` QQ values and groups by `40030`, falling back to `40021`. UID-only private conversations and future QQ layouts need additional adapters or selectors. Use the generated index to see which conversations are currently addressable.
+此版本通过数值字段 `40030` 选择私聊；群聊优先使用 `40030`，缺失时使用 `40021`。仅有 UID 的私聊，以及未来 QQ 版本的新布局，需要后续增加选择方式或适配器。可以查看生成的会话索引，确认哪些会话目前能够选择。
 
-Technical reports and terminal output omit chat content, QQ numbers, names, database keys, and raw BLOBs. Export files and the conversation index intentionally contain private data. Export only data you are authorized to access, and do not attach your real database or export files to public issues.
+终端输出和技术报告不包含聊天正文、QQ 号、昵称、数据库密钥或原始 BLOB。导出文件和会话索引则有意包含私人数据。只导出你有权访问的记录，不要将真实数据库或导出文件附在公开 issue 中。
 
-## Development
+## 开发与验证
 
 ```powershell
 & E:\QQNTExportVenv\Scripts\python.exe -m pip install ".[test]"
@@ -65,4 +65,4 @@ Technical reports and terminal output omit chat content, QQ numbers, names, data
 & E:\QQNTExportVenv\Scripts\python.exe -m build
 ```
 
-Tests use generated synthetic SQLite and Protobuf messages. See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md) before sharing a bug report or adapter change.
+测试使用合成的 SQLite 数据库和 Protobuf 消息。提交问题或新增适配器前，请阅读[贡献指南](CONTRIBUTING.md)和[安全与隐私说明](SECURITY.md)。
