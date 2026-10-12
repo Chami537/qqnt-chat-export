@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from qqnt_export.adapters.qqnt_9_9_27 import QQNT9927Adapter
-from qqnt_export.decrypt import decrypt_snapshot
+from qqnt_export.decrypt import ProcessMemoryKeyProvider, decrypt_snapshot
 from qqnt_export.errors import SafeFailure
 from qqnt_export.models import DatabaseSource
 from qqnt_export.snapshot import Snapshot
@@ -65,3 +65,19 @@ def test_invalid_plain_database_is_removed(tmp_path: Path) -> None:
     with pytest.raises(SafeFailure):
         decrypt_snapshot(snapshot, source, work, QQNT9927Adapter(), FixedKeyProvider(), cipher_executor=bad_executor)
     assert not (work.root / "nt_msg_plain.db").exists()
+
+
+def test_missing_sqlcipher_fails_before_process_memory_scan(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    snapshot, source, work = fixtures(tmp_path)
+    scanned = False
+
+    def chunks(_pid):
+        nonlocal scanned
+        scanned = True
+        yield b"candidate"
+
+    monkeypatch.setattr("qqnt_export.decrypt._sqlcipher_available", lambda: False, raising=False)
+    provider = ProcessMemoryKeyProvider(QQNT9927Adapter().decrypt_config(), chunks=chunks)
+    with pytest.raises(SafeFailure, match="SQLCipher"):
+        provider.get_key(source, snapshot.encrypted_db)
+    assert not scanned

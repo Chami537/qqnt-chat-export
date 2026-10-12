@@ -23,6 +23,14 @@ class KeyProvider(Protocol):
 CipherExecutor = Callable[[Path, Path, bytes, DecryptConfig], None]
 
 
+def _sqlcipher_available() -> bool:
+    try:
+        import sqlcipher3.dbapi2  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 def _cipher_connection(path: Path, key: bytes, config: DecryptConfig):
     try:
         import sqlcipher3.dbapi2 as cipher
@@ -121,6 +129,8 @@ class ProcessMemoryKeyProvider:
         self.chunks = chunks
 
     def get_key(self, source: DatabaseSource, encrypted_db: Path) -> bytearray:
+        if not _sqlcipher_available():
+            raise SafeFailure("decrypt", "missing_sqlcipher", "缺少 SQLCipher 依赖，请安装 decrypt 额外依赖")
         pattern = re.compile(rb"(?<![\x20-\x7e])[\x20-\x7e]{16}\x00")
         candidates: set[bytes] = set()
         carry = b""

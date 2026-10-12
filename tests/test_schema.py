@@ -23,3 +23,13 @@ def test_schema_rejects_missing_required_column(tmp_path: Path) -> None:
         connection.execute('CREATE TABLE group_msg_table ("40001" INTEGER)')
     with pytest.raises(SafeFailure, match="数据库结构"):
         open_verified_database(path, QQNT9927Adapter())
+
+
+def test_schema_rejects_group_table_without_group_fallback_column(tmp_path: Path) -> None:
+    path = tmp_path / "plain.db"
+    common = '("40001" INTEGER, "40013" INTEGER, "40030" INTEGER, "40033" INTEGER, "40050" INTEGER, "40800" BLOB)'
+    with sqlite3.connect(path) as connection:
+        connection.execute(f'CREATE TABLE c2c_msg_table {common}')
+        connection.execute(f'CREATE TABLE group_msg_table {common}')
+    with pytest.raises(SafeFailure, match="数据库结构"):
+        open_verified_database(path, QQNT9927Adapter())

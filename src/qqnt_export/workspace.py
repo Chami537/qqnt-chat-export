@@ -11,6 +11,12 @@ from .paths import safe_child, validate_non_system_directory
 
 
 MARKER = ".qqnt-export-workspace.json"
+OWNED_ARTIFACTS = frozenset({
+    MARKER,
+    "nt_msg.db", "nt_msg.db-wal", "nt_msg.db-shm",
+    "nt_msg.clear.db", "nt_msg.clear.db-wal", "nt_msg.clear.db-shm", "nt_msg.clear.db-journal",
+    "nt_msg_plain.db", "nt_msg_plain.db-wal", "nt_msg_plain.db-shm", "nt_msg_plain.db-journal",
+})
 
 
 @dataclass
@@ -63,6 +69,12 @@ class Workspace:
             raise SafeFailure("cleanup", "not_owned", "这不是工具工作目录") from None
         if data.get("tool") != "qqnt-export" or (self.run_id and data.get("run_id") != self.run_id):
             raise SafeFailure("cleanup", "not_owned", "这不是工具工作目录")
+        try:
+            contents = list(root.iterdir())
+        except OSError:
+            raise SafeFailure("cleanup", "unreadable_workspace", "无法检查工具工作目录") from None
+        if any(item.name not in OWNED_ARTIFACTS or not item.is_file() or item.is_symlink() for item in contents):
+            raise SafeFailure("cleanup", "foreign_file", "工作目录含有非工具文件，已保留整个目录")
 
 
 def cleanup_marked_workspace(root: Path) -> None:

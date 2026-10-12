@@ -20,7 +20,8 @@ def open_verified_database(path: Path, adapter: QQNTAdapter) -> sqlite3.Connecti
         columns_required = {"40001", "40013", "40030", "40033", "40050", "40800"}
         for source in sources:
             columns = {row[1] for row in connection.execute(f'PRAGMA table_info("{source.table}")')}
-            if not columns_required.issubset(columns):
+            required_for_source = columns_required | ({"40021"} if source.kind == "group" else set())
+            if not required_for_source.issubset(columns):
                 raise ValueError("missing message columns")
         return connection
     except (sqlite3.Error, ValueError, OSError):

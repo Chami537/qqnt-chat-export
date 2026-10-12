@@ -173,8 +173,8 @@ def run_export(args: argparse.Namespace) -> ExportResult:
 
 
 def run_cleanup(args: argparse.Namespace) -> int:
-    path = args.work_dir.expanduser().resolve()
-    if path.drive.casefold() == system_drive().drive.casefold():
+    path = args.work_dir.expanduser()
+    if path.resolve().drive.casefold() == system_drive().drive.casefold():
         raise SafeFailure("cleanup", "system_drive", "工作目录不能位于系统盘")
     cleanup_marked_workspace(path)
     print("工作目录已清理。")
