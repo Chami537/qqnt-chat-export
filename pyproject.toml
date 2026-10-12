@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qqnt-chat-export"
+version = "0.1.0"
+description = "Local, read-only QQNT chat export CLI"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "QQNT Chat Export contributors"}]
+classifiers = ["Programming Language :: Python :: 3", "Operating System :: Microsoft :: Windows"]
+dependencies = []
+
+[project.optional-dependencies]
+decrypt = ["sqlcipher3>=0.6,<1"]
+test = ["pytest>=8,<10", "pytest-cov>=5,<8", "build>=1,<2"]
+
+[project.scripts]
+qqnt-export = "qqnt_export.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+.superpowers/
+*.db
+*.db-wal
+*.db-shm
+*.wal
+*.shm
+*.key
+chat_export.json
+chat_export.md
+*_report.json
