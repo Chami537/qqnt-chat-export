@@ -23,7 +23,7 @@ class QQNT9927Adapter:
                 header = handle.read(40)
         except OSError:
             return CompatibilityResult(False, self.name, "unreadable_database")
-        if len(header) < 40 or header[:16] != b"SQLite format 3\x00" or header[32:40] != b"QQ_NT DB":
+        if len(header) < 40 or header[:16] != b"SQLite header 3\x00" or header[32:40] != b"QQ_NT DB":
             return CompatibilityResult(False, self.name, "unexpected_encrypted_header")
         return CompatibilityResult(True, self.name, "ok")
 

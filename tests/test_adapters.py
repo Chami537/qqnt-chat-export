@@ -38,7 +38,7 @@ def test_select_adapter_returns_single_match() -> None:
 def test_9927_probe_requires_version_and_header(tmp_path: Path) -> None:
     db = tmp_path / "nt_msg.db"
     header = bytearray(1024)
-    header[:16] = b"SQLite format 3\x00"
+    header[:16] = b"SQLite header 3\x00"
     header[32:40] = b"QQ_NT DB"
     db.write_bytes(header + b"encrypted fixture")
     adapter = QQNT9927Adapter()

@@ -2,12 +2,32 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import Callable, Iterable, Mapping
 
 from .errors import SafeFailure
 from .models import DatabaseSource
+
+
+_INSTALL_VERSION = re.compile(r"^(\d+\.\d+\.\d+)(?:-[0-9]+)?$")
+
+
+def infer_qq_version(executable: Path, wrapper_path: Path | None, fallback: str) -> str:
+    if wrapper_path is not None:
+        parts = wrapper_path.parts
+        for index, part in enumerate(parts[:-1]):
+            if part.casefold() == "versions":
+                match = _INSTALL_VERSION.fullmatch(parts[index + 1])
+                if match:
+                    return match.group(1)
+    versions = executable.parent / "versions"
+    if versions.is_dir():
+        found = [match.group(1) for item in versions.iterdir() if item.is_dir() if (match := _INSTALL_VERSION.fullmatch(item.name))]
+        if len(found) == 1:
+            return found[0]
+    return fallback
 
 
 def windows_qq_processes() -> list[dict[str, object]]:
@@ -17,7 +37,9 @@ def windows_qq_processes() -> list[dict[str, object]]:
         "Get-CimInstance Win32_Process -Filter \"Name = 'QQ.exe'\" | "
         "ForEach-Object { $p=$_.ExecutablePath; "
         "$v=if($p){(Get-Item -LiteralPath $p -ErrorAction SilentlyContinue).VersionInfo.ProductVersion}else{''}; "
-        "[pscustomobject]@{pid=$_.ProcessId;path=$p;version=$v} } | ConvertTo-Json -Compress"
+        "$m=$null; try{$m=(Get-Process -Id $_.ProcessId -ErrorAction Stop).Modules | Where-Object {$_.ModuleName -eq 'wrapper.node'} | Select-Object -First 1}catch{}; "
+        "$w=$null -ne $m; $mp=if($m){$m.FileName}else{''}; "
+        "[pscustomobject]@{pid=$_.ProcessId;path=$p;version=$v;has_wrapper=$w;wrapper_path=$mp} } | ConvertTo-Json -Compress"
     )
     try:
         result = subprocess.run(
@@ -30,7 +52,12 @@ def windows_qq_processes() -> list[dict[str, object]]:
         if not result.stdout.strip():
             return []
         parsed = json.loads(result.stdout)
-        return parsed if isinstance(parsed, list) else [parsed]
+        records = parsed if isinstance(parsed, list) else [parsed]
+        for record in records:
+            if record.get("path"):
+                wrapper = Path(str(record["wrapper_path"])) if record.get("wrapper_path") else None
+                record["version"] = infer_qq_version(Path(str(record["path"])), wrapper, str(record.get("version", "")))
+        return records
     except (OSError, subprocess.SubprocessError, ValueError):
         raise SafeFailure("discovery", "process_query_failed", "无法读取本机 QQ 进程信息") from None
 
@@ -55,7 +82,7 @@ def discover_qq_installations(
         raise SafeFailure("discovery", "process_query_failed", "无法读取本机 QQ 进程信息") from None
     if not processes:
         raise SafeFailure("discovery", "qq_not_running", "请先打开并登录 QQ")
-    candidates: dict[str, DatabaseSource] = {}
+    candidates: dict[str, tuple[DatabaseSource, bool]] = {}
     for root in data_roots if data_roots is not None else default_data_roots():
         if not root.is_dir():
             continue
@@ -77,11 +104,12 @@ def discover_qq_installations(
                     Path(str(process["path"])) if process.get("path") else None,
                 )
                 key = str(db.resolve()).casefold()
-                if key not in candidates or pid > candidates[key].process_id:
-                    candidates[key] = source
+                has_wrapper = bool(process.get("has_wrapper"))
+                if key not in candidates or (has_wrapper, pid) > (candidates[key][1], candidates[key][0].process_id):
+                    candidates[key] = (source, has_wrapper)
     if not candidates:
         raise SafeFailure("discovery", "database_not_found", "未找到 QQNT 数据库，请指定数据目录")
-    return sorted(candidates.values(), key=lambda item: (item.account, str(item.db_path)))
+    return sorted((item[0] for item in candidates.values()), key=lambda item: (item.account, str(item.db_path)))
 
 
 def choose_source(candidates: Iterable[DatabaseSource], account_hint: str | None) -> DatabaseSource:
