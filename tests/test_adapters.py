@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from qqnt_export.adapters.registry import select_adapter
+from qqnt_export.adapters.qqnt_9_9_27 import QQNT9927Adapter
 from qqnt_export.errors import SafeFailure
 from qqnt_export.models import CompatibilityResult, DatabaseSource
 
@@ -32,3 +33,16 @@ def test_select_adapter_rejects_multiple_compatible_adapters() -> None:
 
 def test_select_adapter_returns_single_match() -> None:
     assert select_adapter(source(), [StubAdapter("first", True)]).name == "first"
+
+
+def test_9927_probe_requires_version_and_header(tmp_path: Path) -> None:
+    db = tmp_path / "nt_msg.db"
+    header = bytearray(1024)
+    header[:16] = b"SQLite format 3\x00"
+    header[32:40] = b"QQ_NT DB"
+    db.write_bytes(header + b"encrypted fixture")
+    adapter = QQNT9927Adapter()
+    assert adapter.probe(DatabaseSource(db, "demo", "9.9.27", 2)).supported
+    assert not adapter.probe(DatabaseSource(db, "demo", "9.9.28", 2)).supported
+    db.write_bytes(b"ordinary SQLite")
+    assert not adapter.probe(DatabaseSource(db, "demo", "9.9.27", 2)).supported
