@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .base import DecryptConfig
 from qqnt_export.models import CompatibilityResult, DatabaseSource
 
 
@@ -27,3 +28,6 @@ class QQNT9927Adapter:
     def snapshot_paths(self, source: DatabaseSource) -> tuple[Path, ...]:
         db = source.db_path
         return (db, Path(str(db) + "-wal"), Path(str(db) + "-shm"))
+
+    def decrypt_config(self) -> DecryptConfig:
+        return DecryptConfig(1024, 4096, 4000, "HMAC_SHA1", "PBKDF2_HMAC_SHA512")
