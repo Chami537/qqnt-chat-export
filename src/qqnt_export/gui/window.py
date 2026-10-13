@@ -8,7 +8,7 @@ import os
 from PySide6.QtCore import Qt, Signal, QThread, QTimer
 from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
-    QLineEdit, QMainWindow, QMessageBox, QProgressBar, QPushButton,
+    QLineEdit, QMainWindow, QMessageBox, QProgressBar, QPushButton, QListWidget,
     QTableView, QVBoxLayout, QWidget, QHeaderView,
 )
 
@@ -20,7 +20,7 @@ from qqnt_export.work_locations import suggest_work_root
 from qqnt_export.services import BatchSummary, TaskProgress, scan_conversations, export_batch
 from .session_model import ConversationFilterModel, SessionTableModel
 from .theme import STYLE, ui_font
-from .workers import ScanWorker, ExportWorker
+from .workers import DiscoverWorker, ScanWorker, ExportWorker
 
 
 class MainWindow(QMainWindow):
@@ -29,8 +29,9 @@ class MainWindow(QMainWindow):
     export_requested = Signal()
     cancel_requested = Signal()
 
-    def __init__(self, *, scan_service=scan_conversations, export_service=export_batch):
+    def __init__(self, *, discover_service=find_sources, scan_service=scan_conversations, export_service=export_batch):
         super().__init__()
+        self._discover_service = discover_service
         self._scan_service = scan_service
         self._export_service = export_service
         self._task_running = False
@@ -100,6 +101,9 @@ class MainWindow(QMainWindow):
         self.source_combo.addItem("正在查找 QQ 数据源…", None)
         self.source_combo.currentIndexChanged.connect(self._source_changed)
         source_row.addWidget(self.source_combo, 1)
+        self.refresh_button = QPushButton("刷新")
+        self.refresh_button.clicked.connect(lambda: self.refresh_sources())
+        source_row.addWidget(self.refresh_button)
         self.source_browse_button = QPushButton("选择数据库")
         self.source_browse_button.clicked.connect(self._choose_source)
         source_row.addWidget(self.source_browse_button)
@@ -180,6 +184,10 @@ class MainWindow(QMainWindow):
         self.result_label.setWordWrap(True)
         self.result_label.setObjectName("muted")
         body.addWidget(self.result_label)
+        self.result_list = QListWidget()
+        self.result_list.setMaximumHeight(160)
+        self.result_list.setVisible(False)
+        body.addWidget(self.result_list)
         self.open_output_button = QPushButton("打开输出目录")
         self.open_output_button.setVisible(False)
         self.open_output_button.clicked.connect(self._open_output)
@@ -197,11 +205,7 @@ class MainWindow(QMainWindow):
     def _choose_source(self):
         path, _ = QFileDialog.getOpenFileName(self, "选择 nt_msg.db", "", "QQNT 数据库 (nt_msg.db)")
         if path:
-            try:
-                self.set_sources(find_sources(source_path=Path(path)))
-            except SafeFailure as failure:
-                self.set_sessions([])
-                self.source_status.setText(failure.public_message)
+            self.refresh_sources(Path(path))
 
     def _choose_work_root(self):
         path = QFileDialog.getExistingDirectory(self, "选择非系统盘临时工作位置")
@@ -229,6 +233,8 @@ class MainWindow(QMainWindow):
         self._sources = list(sources)
         self.source_combo.blockSignals(True)
         self.source_combo.clear()
+        if len(self._sources) > 1:
+            self.source_combo.addItem("请选择数据源和 QQ 进程", None)
         for source in self._sources:
             self.source_combo.addItem(f"QQ {source.account} · PID {source.process_id} · {source.qq_version}", source)
         if not self._sources:
@@ -236,12 +242,12 @@ class MainWindow(QMainWindow):
         self.source_combo.blockSignals(False)
         self._source_changed()
 
-    def refresh_sources(self) -> None:
-        try:
-            self.set_sources(find_sources())
-        except SafeFailure as failure:
-            self.set_sources([])
-            self.source_status.setText(failure.public_message)
+    def refresh_sources(self, source_path: Path | None = None) -> None:
+        if self._task_running:
+            return
+        self.set_sessions([])
+        worker = DiscoverWorker(threading.Event(), self._discover_service, source_path)
+        self._start_worker(worker, "discover")
 
     def set_source_identity(self, identity: object) -> None:
         if identity != self._source_identity:
@@ -310,12 +316,15 @@ class MainWindow(QMainWindow):
         self.scan_button.setEnabled(False)
         self.export_button.setEnabled(False)
         self.source_combo.setEnabled(False)
+        self.refresh_button.setEnabled(False)
         self.source_browse_button.setEnabled(False)
         self.cancel_button.setVisible(True)
         self.cancel_button.setEnabled(True)
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 0)
-        self.result_label.setText("正在扫描会话…" if kind == "scan" else "正在导出所选会话…")
+        self.result_label.setText({"scan": "正在扫描会话…", "export": "正在导出所选会话…", "discover": "正在查找 QQ 数据源…"}[kind])
+        self.result_list.setVisible(False)
+        self.result_list.clear()
         self.open_output_button.setVisible(False)
         thread = QThread(self)
         self._thread = thread
@@ -323,8 +332,8 @@ class MainWindow(QMainWindow):
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.progress.connect(self._on_progress)
-        worker.finished.connect(self._on_scan_result if kind == "scan" else self._on_export_result)
-        worker.failed.connect(self._on_failed)
+        worker.finished.connect({"scan": self._on_scan_result, "export": self._on_export_result, "discover": self._on_discovered}[kind])
+        worker.failed.connect(self._on_discovery_failed if kind == "discover" else self._on_failed)
         worker.cancelled.connect(self._on_cancelled)
         worker.done.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
@@ -362,11 +371,35 @@ class MainWindow(QMainWindow):
 
     def _on_export_result(self, summary: BatchSummary) -> None:
         counts = {status: sum(item.status == status for item in summary.outcomes) for status in ("success", "failed", "cancelled")}
+        titles = {(entry.kind, entry.selector): entry.title for entry in self.session_model.entries}
+        kinds = {"c2c": "私聊", "group": "群聊"}
+        statuses = {"success": "成功", "failed": "失败", "cancelled": "取消"}
+        self.result_list.clear()
+        for item in summary.outcomes:
+            kind, selector = item.key
+            label = titles.get(item.key, selector)
+            detail = f"{kinds.get(kind, kind)} · {label} ({selector}) — {statuses[item.status]}"
+            if item.status == "success":
+                detail += f" · {item.message_count} 条"
+            elif item.public_message:
+                detail += f" · {item.public_message}"
+            self.result_list.addItem(detail)
+        self.result_list.setVisible(bool(summary.outcomes))
         self.result_label.setText(
             f"导出结束：成功 {counts['success']}，失败 {counts['failed']}，取消 {counts['cancelled']}。"
         )
         self._last_batch_dir = summary.batch_dir
         self.open_output_button.setVisible(summary.batch_dir.is_dir())
+
+    def _on_discovered(self, sources) -> None:
+        self.set_sources(sources)
+        if not sources:
+            self.source_status.setText("未找到 QQ 数据源。请登录 QQ 后点击刷新")
+
+    def _on_discovery_failed(self, message: str) -> None:
+        self.set_sources([])
+        self.source_status.setText(message)
+        self.result_label.setText(message)
 
     def _on_failed(self, message: str) -> None:
         self.result_label.setText(message)
@@ -381,6 +414,7 @@ class MainWindow(QMainWindow):
         self.cancel_button.setVisible(False)
         self.progress_bar.setVisible(False)
         self.source_combo.setEnabled(True)
+        self.refresh_button.setEnabled(True)
         self.source_browse_button.setEnabled(True)
         self.scan_button.setEnabled(self.selected_source() is not None)
         self.export_button.setEnabled(bool(self.session_model.selected_keys()))

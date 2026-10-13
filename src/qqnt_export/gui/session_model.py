@@ -50,7 +50,7 @@ class SessionTableModel(QAbstractTableModel):
             return False
         entry = self.entries[index.row()]
         key = (entry.kind, entry.selector)
-        if value == Qt.Checked:
+        if value == Qt.Checked or value == Qt.Checked.value:
             self._selected.add(key)
         else:
             self._selected.discard(key)

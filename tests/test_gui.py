@@ -8,6 +8,8 @@ import pytest
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QTimer
 from PySide6.QtCore import QThread
+from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
 
 from qqnt_export.conversations import ConversationIndexEntry
 from qqnt_export.gui.session_model import ConversationFilterModel, SessionTableModel
@@ -199,10 +201,68 @@ def test_export_updates_result_on_main_thread(qapp, tmp_path):
 
     window = CheckingWindow(export_service=fake_export)
     window.show()
+    window.set_sessions(entries())
     source = DatabaseSource(tmp_path / "nt_msg.db", "synthetic", "9.9.27", 1)
     window.start_export(source, tmp_path / "work", output, [("c2c", "100"), ("group", "200")])
     _wait_for(qapp, lambda: not window._task_running)
     assert seen == [True]
     assert "成功 1，失败 1" in window.result_label.text()
+    result_lines = [window.result_list.item(row).text() for row in range(window.result_list.count())]
+    assert any("联系人甲" in line and "成功" in line for line in result_lines)
+    assert any("群甲" in line and "失败" in line and "合成失败" in line for line in result_lines)
     assert window.open_output_button.isVisible()
+    window.close()
+
+
+def test_space_checks_conversation_in_view(qapp):
+    window = MainWindow()
+    window.set_sessions(entries())
+    window.show()
+    window.table.setFocus()
+    window.table.setCurrentIndex(window.filter_model.index(0, 0))
+    QTest.keyClick(window.table, Qt.Key_Space)
+    qapp.processEvents()
+    assert window.session_model.selected_keys() == {("c2c", "100")}
+    assert window.export_button.isEnabled()
+    window.close()
+
+
+def test_multiple_processes_require_explicit_source_choice(qapp, tmp_path):
+    window = MainWindow()
+    db = tmp_path / "nt_msg.db"
+    db.write_bytes(b"synthetic")
+    window.set_sources([
+        DatabaseSource(db, "synthetic", "9.9.27", 7),
+        DatabaseSource(db, "synthetic", "9.9.27", 8),
+    ])
+    assert window.selected_source() is None
+    assert not window.scan_button.isEnabled()
+    window.source_combo.setCurrentIndex(2)
+    assert window.selected_source().process_id == 8
+    assert window.scan_button.isEnabled()
+    window.close()
+
+
+def test_refresh_recovers_after_qq_starts(qapp, tmp_path):
+    db = tmp_path / "nt_msg.db"
+    db.write_bytes(b"synthetic")
+    calls = 0
+
+    def discover():
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise SafeFailure("discovery", "qq_not_running", "请先打开并登录 QQ")
+        return [DatabaseSource(db, "synthetic", "9.9.27", 7)]
+
+    window = MainWindow(discover_service=discover)
+    window.show()
+    window.refresh_sources()
+    _wait_for(qapp, lambda: not window._task_running)
+    assert not window.scan_button.isEnabled()
+    assert window.refresh_button.isEnabled()
+    window.refresh_button.click()
+    _wait_for(qapp, lambda: not window._task_running)
+    assert window.selected_source().process_id == 7
+    assert window.scan_button.isEnabled()
     window.close()

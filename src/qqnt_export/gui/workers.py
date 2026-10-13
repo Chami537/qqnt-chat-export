@@ -9,6 +9,36 @@ from PySide6.QtCore import QObject, Signal, Slot
 from qqnt_export.errors import ExportCancelled, SafeFailure
 from qqnt_export.models import DatabaseSource
 from qqnt_export.services import BatchSummary, TaskProgress, export_batch, scan_conversations
+from qqnt_export.source_selection import find_sources
+
+
+class DiscoverWorker(QObject):
+    progress = Signal(object)
+    finished = Signal(object)
+    failed = Signal(str)
+    cancelled = Signal()
+    done = Signal()
+
+    def __init__(
+        self, cancel_event: threading.Event, service: Callable = find_sources,
+        source_path: Path | None = None,
+    ):
+        super().__init__()
+        self.cancel_event = cancel_event
+        self.service = service
+        self.source_path = source_path
+
+    @Slot()
+    def run(self):
+        try:
+            result = self.service(source_path=self.source_path) if self.source_path else self.service()
+            self.finished.emit(result)
+        except SafeFailure as failure:
+            self.failed.emit(failure.public_message)
+        except Exception:
+            self.failed.emit("无法查找 QQ 数据源，请检查 QQ 是否已登录")
+        finally:
+            self.done.emit()
 
 
 class ScanWorker(QObject):
