@@ -9,15 +9,13 @@ from typing import Sequence
 from .adapters.qqnt_9_9_27 import QQNT9927Adapter
 from .adapters.registry import select_adapter
 from .conversations import build_conversation_index, iter_selected_messages, resolve_conversation
-from .decrypt import ProcessMemoryKeyProvider, decrypt_snapshot
-from .discovery import choose_source, discover_qq_installations, windows_qq_processes
 from .errors import SafeFailure
 from .exporters import export_conversation
 from .models import DatabaseSource, ExportResult
 from .paths import system_drive, validate_non_system_directory
 from .reports import write_safe_report
-from .schema import open_verified_database
-from .snapshot import create_snapshot
+from .services import open_working_database
+from .source_selection import find_sources
 from .workspace import Workspace, cleanup_marked_workspace
 
 
@@ -69,25 +67,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _source_from_args(args: argparse.Namespace) -> DatabaseSource:
-    if args.source is None:
-        roots = [args.data_root] if args.data_root is not None else None
-        candidates = discover_qq_installations(windows_qq_processes, roots)
-        if args.pid is not None:
-            candidates = [item for item in candidates if item.process_id == args.pid]
-        return choose_source(candidates, args.account)
-    path = args.source.expanduser().resolve()
-    if not path.is_file():
-        raise SafeFailure("discovery", "database_not_found", "指定的 QQ 数据库不存在")
-    processes = windows_qq_processes()
-    if args.pid is not None:
-        processes = [item for item in processes if int(item.get("pid", 0)) == args.pid]
-    if not processes:
-        raise SafeFailure("discovery", "qq_not_running", "请先打开并登录 QQ")
-    process = max(processes, key=lambda item: (bool(item.get("has_wrapper")), int(item.get("pid", 0))))
-    account = path.parents[2].name if len(path.parents) > 2 else ""
-    if args.account is not None and args.account != account:
+    candidates = find_sources(args.source, args.data_root, args.pid)
+    if args.account is not None:
+        candidates = [item for item in candidates if item.account == args.account]
+    if not candidates:
         raise SafeFailure("discovery", "account_not_found", "指定账号与数据库路径不一致")
-    return DatabaseSource(path, account, str(process.get("version", "")), int(process["pid"]), Path(str(process["path"])) if process.get("path") else None)
+    if len(candidates) > 1:
+        if len({item.account for item in candidates}) > 1:
+            raise SafeFailure("discovery", "ambiguous_account", "找到多个 QQ 数据目录，请使用 --account 选择")
+        raise SafeFailure("discovery", "ambiguous_process", "找到多个 QQ 进程，请使用 --pid 选择")
+    return candidates[0]
 
 
 def _select_adapter(source: DatabaseSource, output: Path | None = None) -> QQNT9927Adapter:
@@ -125,10 +114,7 @@ def _prepare(args: argparse.Namespace):
 
 
 def _open_working_database(source: DatabaseSource, adapter: QQNT9927Adapter, workspace: Workspace):
-    snapshot = create_snapshot(source, workspace, adapter)
-    provider = ProcessMemoryKeyProvider(adapter.decrypt_config())
-    plain = decrypt_snapshot(snapshot, source, workspace, adapter, provider)
-    return open_verified_database(plain, adapter)
+    return open_working_database(source, adapter, workspace)
 
 
 def run_conversations(args: argparse.Namespace) -> int:

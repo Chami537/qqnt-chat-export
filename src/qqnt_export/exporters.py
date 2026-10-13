@@ -3,11 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
 from .conversations import ConversationIndexEntry
-from .errors import SafeFailure
+from .errors import ExportCancelled, SafeFailure
 from .models import ExportResult, NormalizedMessage
 
 
@@ -42,7 +42,11 @@ def _record(message: NormalizedMessage) -> dict[str, object]:
 
 
 def export_conversation(
-    output_dir: Path, conversation: ConversationIndexEntry, messages: Iterable[NormalizedMessage]
+    output_dir: Path,
+    conversation: ConversationIndexEntry,
+    messages: Iterable[NormalizedMessage],
+    *,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> ExportResult:
     if conversation.kind not in ("c2c", "group"):
         raise SafeFailure("output", "invalid_conversation", "会话类型无效")
@@ -64,11 +68,16 @@ def export_conversation(
     count = 0
     current_date: str | None = None
     created: list[Path] = []
+    completed = False
     try:
+        if should_cancel is not None and should_cancel():
+            raise ExportCancelled()
         with temp_json.open("x", encoding="utf-8", newline="\n") as json_file, temp_markdown.open("x", encoding="utf-8", newline="\n") as markdown_file:
             json_file.write("[\n")
             markdown_file.write(f"# 与 {_safe_title(conversation.title)} 的聊天记录\n\n")
             for message in messages:
+                if should_cancel is not None and should_cancel():
+                    raise ExportCancelled()
                 if count:
                     json_file.write(",\n")
                 json_file.write(json.dumps(_record(message), ensure_ascii=False, separators=(",", ":")))
@@ -81,12 +90,15 @@ def export_conversation(
                 markdown_file.write(f"{time} {sender}：\n{_markdown_message_content(message)}\n\n")
                 count += 1
             json_file.write("\n]\n")
+        if should_cancel is not None and should_cancel():
+            raise ExportCancelled()
         if json_path.exists() or markdown_path.exists():
             raise SafeFailure("output", "already_exists", "该会话的导出文件已存在，请另选输出目录")
         temp_json.rename(json_path)
         created.append(json_path)
         temp_markdown.rename(markdown_path)
         created.append(markdown_path)
+        completed = True
         return ExportResult(json_path, markdown_path, count)
     except SafeFailure:
         for path in created:
@@ -99,3 +111,8 @@ def export_conversation(
     finally:
         temp_json.unlink(missing_ok=True)
         temp_markdown.unlink(missing_ok=True)
+        if not completed:
+            try:
+                directory.rmdir()
+            except OSError:
+                pass

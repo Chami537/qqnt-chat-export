@@ -15,10 +15,14 @@ dependencies = []
 
 [project.optional-dependencies]
 decrypt = ["sqlcipher3>=0.6,<1"]
+gui = ["PySide6-Essentials>=6.10,<7"]
 test = ["pytest>=8,<10", "pytest-cov>=5,<8", "build>=1,<2"]
 
 [project.scripts]
 qqnt-export = "qqnt_export.cli:main"
+
+[project.gui-scripts]
+qqnt-export-gui = "qqnt_export.gui.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
