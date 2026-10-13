@@ -53,14 +53,25 @@ def open_working_database(
     adapter: QQNTAdapter,
     workspace: Workspace,
     on_stage: Callable[[str], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> sqlite3.Connection:
+    if should_cancel is not None and should_cancel():
+        raise ExportCancelled()
     if on_stage is not None:
         on_stage("snapshot")
+    if should_cancel is not None and should_cancel():
+        raise ExportCancelled()
     snapshot = create_snapshot(source, workspace, adapter)
+    if should_cancel is not None and should_cancel():
+        raise ExportCancelled()
     if on_stage is not None:
         on_stage("decrypt")
+    if should_cancel is not None and should_cancel():
+        raise ExportCancelled()
     provider = ProcessMemoryKeyProvider(adapter.decrypt_config())
     plain = decrypt_snapshot(snapshot, source, workspace, adapter, provider)
+    if should_cancel is not None and should_cancel():
+        raise ExportCancelled()
     return open_verified_database(plain, adapter)
 
 
@@ -86,6 +97,7 @@ def scan_conversations(
         connection = open_working_database(
             source, adapter, workspace,
             on_stage=lambda stage: on_progress(TaskProgress(stage, 0, 0)),
+            should_cancel=should_cancel,
         )
         if should_cancel():
             raise ExportCancelled()
@@ -144,6 +156,7 @@ def export_batch(
         connection = open_working_database(
             source, adapter, workspace,
             on_stage=lambda stage: on_progress(TaskProgress(stage, 0, len(keys))),
+            should_cancel=should_cancel,
         )
         index = {
             (item.kind, item.selector): item
@@ -181,6 +194,9 @@ def export_batch(
                         _remove_completed_export(result, batch_dir)
                     outcomes.append(SessionOutcome(key, "failed", public_message="该会话导出未完成"))
             on_progress(TaskProgress("export", len(outcomes), len(keys)))
+        return BatchSummary(batch_dir, tuple(outcomes))
+    except ExportCancelled:
+        outcomes.extend(SessionOutcome(key, "cancelled") for key in keys[len(outcomes):])
         return BatchSummary(batch_dir, tuple(outcomes))
     except Exception:
         try:

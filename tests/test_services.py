@@ -183,3 +183,42 @@ def test_snapshot_failure_removes_empty_batch_and_plaintext_workspace(
         )
     assert not list((tmp_path / "out").glob("batch_*"))
     assert not list((tmp_path / "work").rglob("*.db"))
+
+
+def test_scan_cancel_after_snapshot_skips_decryption(
+    synthetic_source: DatabaseSource, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    cancelled = False
+
+    def progress(event):
+        nonlocal cancelled
+        if event.stage == "decrypt":
+            cancelled = True
+
+    monkeypatch.setattr(services, "decrypt_snapshot", lambda *args: pytest.fail("decryption ran after cancel"))
+    with pytest.raises(ExportCancelled):
+        services.scan_conversations(
+            synthetic_source, tmp_path / "work",
+            should_cancel=lambda: cancelled, on_progress=progress,
+        )
+    assert not list((tmp_path / "work").rglob("*.db"))
+
+
+def test_batch_cancel_after_snapshot_marks_all_selected_cancelled(
+    synthetic_source: DatabaseSource, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    cancelled = False
+
+    def progress(event):
+        nonlocal cancelled
+        if event.stage == "decrypt":
+            cancelled = True
+
+    monkeypatch.setattr(services, "decrypt_snapshot", lambda *args: pytest.fail("decryption ran after cancel"))
+    summary = services.export_batch(
+        synthetic_source, tmp_path / "work", tmp_path / "out",
+        [("c2c", "100"), ("group", "200")],
+        should_cancel=lambda: cancelled, on_progress=progress,
+    )
+    assert [item.status for item in summary.outcomes] == ["cancelled", "cancelled"]
+    assert not list((tmp_path / "work").rglob("*.db"))
