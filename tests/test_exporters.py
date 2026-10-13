@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from qqnt_export.conversations import ConversationIndexEntry
-from qqnt_export.errors import SafeFailure
+from qqnt_export.errors import ExportCancelled, SafeFailure
 from qqnt_export.exporters import export_conversation
 from qqnt_export.models import NormalizedMessage
 
@@ -76,3 +76,33 @@ def test_export_refuses_linked_conversation_directory(tmp_path: Path) -> None:
     with pytest.raises(SafeFailure):
         export_conversation(output, conversation(), two_messages())
     assert not list(target.iterdir())
+
+
+def test_cancel_removes_partial_files_and_new_directory(tmp_path: Path) -> None:
+    cancelled = False
+    message = NormalizedMessage(datetime(2026, 1, 1, 20, 30, tzinfo=TZ), "self", "text", "合成文本")
+
+    def messages():
+        nonlocal cancelled
+        yield message
+        cancelled = True
+        yield message
+
+    with pytest.raises(ExportCancelled):
+        export_conversation(tmp_path, conversation(), messages(), should_cancel=lambda: cancelled)
+    assert not list(tmp_path.iterdir())
+
+
+def test_invalid_message_removes_partial_files_and_new_directory(tmp_path: Path) -> None:
+    invalid = NormalizedMessage(datetime(2026, 1, 1, 20, 30, tzinfo=TZ), "invalid", "text", "合成文本")
+    with pytest.raises(SafeFailure, match="无法写入"):
+        export_conversation(tmp_path, conversation(), [invalid])
+    assert not list(tmp_path.iterdir())
+
+
+def test_existing_destination_remains_untouched_on_cancel(tmp_path: Path) -> None:
+    result = export_conversation(tmp_path, conversation(), two_messages())
+    before = result.json_path.read_bytes()
+    with pytest.raises(SafeFailure, match="已存在"):
+        export_conversation(tmp_path, conversation(), two_messages(), should_cancel=lambda: True)
+    assert result.json_path.read_bytes() == before

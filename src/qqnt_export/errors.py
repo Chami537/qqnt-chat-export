@@ -12,3 +12,7 @@ class SafeFailure(Exception):
 
     def __repr__(self) -> str:
         return f"SafeFailure(stage={self.stage!r}, code={self.code!r}, public_message={self.public_message!r})"
+
+
+class ExportCancelled(Exception):
+    """A user-requested stop, separate from export failures."""
