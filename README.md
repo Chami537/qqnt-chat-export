@@ -1,10 +1,30 @@
 # QQNT 聊天记录导出工具
 
-这是一个在 Windows 本地运行的命令行工具，可将你有权访问的 QQNT 聊天记录导出为 UTF-8 编码的 JSON 和 Markdown。首个适配器仅支持 **Windows QQ 9.9.27**；其他版本会在兼容性检查阶段停止，不保证能够导出。
+这是一个在 Windows 本地运行的 QQNT 聊天记录导出工具，提供图形界面和命令行。它可将你有权访问的聊天记录批量导出为 UTF-8 编码的 JSON 和 Markdown。首个适配器仅支持 **Windows QQ 9.9.27**；其他版本会在兼容性检查阶段停止，不保证能够导出。
 
 工具不会写入原始 QQ 数据库。它先将数据库及对应的 WAL、SHM 文件复制到非系统盘的工作目录，再对副本解密和分析；命令结束后默认清理临时数据库。解密材料只在本机已登录的 QQ 进程内存中读取和验证，不会打印或写入文件。工具不会上传数据，也不会自动登录 QQ。
 
-## 从仓库安装
+## 图形界面
+
+下载 Windows 目录模式程序后，保持整个 `qqnt-export-gui` 目录完整，运行其中的 `qqnt-export-gui.exe`。不需要安装 Python；首次使用请先打开并登录 QQ 9.9.27。程序启动时只查找本机数据源，不自动复制数据库。
+
+1. 在顶部选择 QQ 数据源。多个账号或进程会分别列出，也可点“选择数据库”指定 `nt_msg.db`。
+2. 确认“临时工作位置”位于非系统盘，点“扫描会话”。扫描结束即清理该次的数据库副本。
+3. 搜索或筛选私聊、群聊，勾选多条会话，或“全选当前结果”。切换筛选不会清除已勾选的会话。
+4. 点“导出所选”，指定非系统盘输出目录并确认。每次导出建立独立的 `batch_...` 文件夹；每条成功会话含 `chat_export.md`、`chat_export.json`、`export_report.json`。
+5. 任务中可点“取消任务”；已完成的会话保留，未完成的临时文件和工作数据库会清理。关闭窗口时程序会先请求取消并等待清理。
+
+窗口会显示每条任务的成功、失败和取消数量。结果文件包含私人聊天内容，请自行保管。GUI 不保存上次账号、会话索引或路径；重新启动后需要再次扫描。
+
+从源码运行图形界面：
+
+```powershell
+py -3.11 -m venv E:\QQNTExportVenv
+& E:\QQNTExportVenv\Scripts\python.exe -m pip install ".[decrypt,gui]"
+& E:\QQNTExportVenv\Scripts\qqnt-export-gui.exe
+```
+
+## 从仓库安装命令行
 
 需要 Windows 和 Python 3.11 或更新版本。如果 C 盘空间有限，请把虚拟环境建在其他盘。以下命令在克隆后的仓库目录中运行：
 
@@ -64,5 +84,13 @@ qqnt-export cleanup --work-dir E:\QQExports\.qqnt-export-workspaces\<run-id>
 & E:\QQNTExportVenv\Scripts\python.exe -m pytest -q
 & E:\QQNTExportVenv\Scripts\python.exe -m build
 ```
+
+在 Windows x64 上构建图形界面便携目录时，先安装 `.[decrypt,gui,test]` 与 `pyinstaller>=6,<7`，然后指定非系统盘构建根目录：
+
+```powershell
+.\scripts\build_windows.ps1 -BuildRoot E:\QQNTExportBuild -PythonExe E:\QQNTExportVenv\Scripts\python.exe
+```
+
+程序位于 `E:\QQNTExportBuild\dist\qqnt-export-gui\qqnt-export-gui.exe`。构建脚本将临时文件与 PyInstaller 缓存放在指定目录；目录模式启动时不会像单文件模式那样每次向系统盘解包大型依赖。打包和分发前请阅读[第三方组件说明](THIRD_PARTY_NOTICES.md)。
 
 测试使用合成的 SQLite 数据库和 Protobuf 消息。提交问题或新增适配器前，请阅读[贡献指南](CONTRIBUTING.md)和[安全与隐私说明](SECURITY.md)。
