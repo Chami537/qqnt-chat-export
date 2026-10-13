@@ -9,14 +9,12 @@ from typing import Sequence
 from .adapters.qqnt_9_9_27 import QQNT9927Adapter
 from .adapters.registry import select_adapter
 from .conversations import build_conversation_index, iter_selected_messages, resolve_conversation
-from .decrypt import ProcessMemoryKeyProvider, decrypt_snapshot
 from .errors import SafeFailure
 from .exporters import export_conversation
 from .models import DatabaseSource, ExportResult
 from .paths import system_drive, validate_non_system_directory
 from .reports import write_safe_report
-from .schema import open_verified_database
-from .snapshot import create_snapshot
+from .services import open_working_database
 from .source_selection import find_sources
 from .workspace import Workspace, cleanup_marked_workspace
 
@@ -116,10 +114,7 @@ def _prepare(args: argparse.Namespace):
 
 
 def _open_working_database(source: DatabaseSource, adapter: QQNT9927Adapter, workspace: Workspace):
-    snapshot = create_snapshot(source, workspace, adapter)
-    provider = ProcessMemoryKeyProvider(adapter.decrypt_config())
-    plain = decrypt_snapshot(snapshot, source, workspace, adapter, provider)
-    return open_verified_database(plain, adapter)
+    return open_working_database(source, adapter, workspace)
 
 
 def run_conversations(args: argparse.Namespace) -> int:

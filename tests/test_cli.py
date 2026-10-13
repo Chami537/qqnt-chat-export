@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from qqnt_export import cli
+from qqnt_export import cli, services
 from qqnt_export.adapters.qqnt_9_9_27 import QQNT9927Adapter
 from qqnt_export.errors import SafeFailure
 from qqnt_export.models import DatabaseSource
@@ -50,7 +50,7 @@ def test_one_command_export_uses_snapshot_and_cleans_workspace(
         def get_key(self, source, encrypted):
             return bytearray(b"synthetic-password")
 
-    monkeypatch.setattr(cli, "ProcessMemoryKeyProvider", lambda config: FixedKey())
+    monkeypatch.setattr(services, "ProcessMemoryKeyProvider", lambda config: FixedKey())
 
     def fake_cipher(encrypted, destination, key, config):
         assert encrypted.read_bytes() == b"X" * 4096
@@ -61,7 +61,7 @@ def test_one_command_export_uses_snapshot_and_cleans_workspace(
             connection.commit()
 
     from qqnt_export.decrypt import decrypt_snapshot as actual_decrypt
-    monkeypatch.setattr(cli, "decrypt_snapshot", lambda snapshot, source, workspace, adapter, provider: actual_decrypt(snapshot, source, workspace, adapter, provider, cipher_executor=fake_cipher))
+    monkeypatch.setattr(services, "decrypt_snapshot", lambda snapshot, source, workspace, adapter, provider: actual_decrypt(snapshot, source, workspace, adapter, provider, cipher_executor=fake_cipher))
     assert cli.main(["export", "--peer", "987654321", "--output", str(output)]) == 0
     folders = list(output.glob("c2c_*"))
     assert len(folders) == 1
