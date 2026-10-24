@@ -29,7 +29,15 @@ def test_safe_failure_maps_to_stage_exit_code(monkeypatch: pytest.MonkeyPatch, t
 def test_help_lists_all_public_commands(capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["--help"]) == 0
     output = capsys.readouterr().out
-    assert all(command in output for command in ("doctor", "conversations", "export", "cleanup"))
+    assert all(command in output for command in ("doctor", "conversations", "export", "recover", "cleanup"))
+
+
+def test_recover_requires_selector_and_dispatches(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    assert cli.main(["recover", "--output", str(tmp_path)]) == 2
+    called = []
+    monkeypatch.setattr(cli, "run_recover", lambda args: called.append(args.peer) or 0)
+    assert cli.main(["recover", "--peer", "123", "--output", str(tmp_path)]) == 0
+    assert called == ["123"]
 
 
 def test_one_command_export_uses_snapshot_and_cleans_workspace(

@@ -14,6 +14,7 @@ MARKER = ".qqnt-export-workspace.json"
 OWNED_ARTIFACTS = frozenset({
     MARKER,
     "nt_msg.db", "nt_msg.db-wal", "nt_msg.db-shm",
+    "nt_msg.key-probe.db", "nt_msg.key-probe.db-wal", "nt_msg.key-probe.db-shm",
     "nt_msg.clear.db", "nt_msg.clear.db-wal", "nt_msg.clear.db-shm", "nt_msg.clear.db-journal",
     "nt_msg_plain.db", "nt_msg_plain.db-wal", "nt_msg_plain.db-shm", "nt_msg_plain.db-journal",
 })

@@ -14,6 +14,7 @@ from .exporters import export_conversation
 from .models import DatabaseSource, ExportResult
 from .paths import system_drive, validate_non_system_directory
 from .reports import write_safe_report
+from .recovery import recover_selected_conversation
 from .services import open_working_database
 from .source_selection import find_sources
 from .workspace import Workspace, cleanup_marked_workspace
@@ -60,6 +61,14 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--output", type=Path, required=True)
     export.add_argument("--work-dir", type=Path)
     export.add_argument("--keep-workdir", action="store_true")
+
+    recover = sub.add_parser("recover", help="整库校验失败时按号码读取单条会话")
+    add_source_options(recover)
+    recover_selector = recover.add_mutually_exclusive_group(required=True)
+    recover_selector.add_argument("--peer", help="私聊对象 QQ 号")
+    recover_selector.add_argument("--group", help="群号")
+    recover.add_argument("--output", type=Path, required=True)
+    recover.add_argument("--work-dir", type=Path)
 
     cleanup = sub.add_parser("cleanup", help="删除工具创建的工作目录")
     cleanup.add_argument("--work-dir", type=Path, required=True)
@@ -114,7 +123,11 @@ def _prepare(args: argparse.Namespace):
 
 
 def _open_working_database(source: DatabaseSource, adapter: QQNT9927Adapter, workspace: Workspace):
-    return open_working_database(source, adapter, workspace)
+    def show_stage(stage: str) -> None:
+        if stage == "wait_qq_exit":
+            print("密钥已验证。请正常退出 QQ，程序会自动继续；按 Ctrl+C 可取消。", file=sys.stderr, flush=True)
+
+    return open_working_database(source, adapter, workspace, on_stage=show_stage)
 
 
 def run_conversations(args: argparse.Namespace) -> int:
@@ -158,6 +171,23 @@ def run_export(args: argparse.Namespace) -> ExportResult:
         workspace.close(success=True)
 
 
+def run_recover(args: argparse.Namespace) -> int:
+    source = _source_from_args(args)
+    kind, selector = ("c2c", args.peer) if args.peer else ("group", args.group)
+
+    def show_stage(stage: str) -> None:
+        if stage == "wait_qq_exit":
+            print("密钥已验证。请正常退出 QQ，程序会继续读取稳定副本；按 Ctrl+C 可取消。", file=sys.stderr, flush=True)
+
+    result = recover_selected_conversation(
+        source, args.work_dir or args.output, args.output, kind, selector,
+        should_cancel=lambda: False, on_stage=show_stage,
+    )
+    print(f"已按号码导出 {result.message_count} 条消息。目录：{result.json_path.parent.name}")
+    print("注意：仅验证了所选会话可读取，未验证整库完整性。", file=sys.stderr)
+    return 0
+
+
 def run_cleanup(args: argparse.Namespace) -> int:
     path = args.work_dir.expanduser()
     if path.resolve().drive.casefold() == system_drive().drive.casefold():
@@ -176,6 +206,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return run_conversations(args)
         if args.command == "cleanup":
             return run_cleanup(args)
+        if args.command == "recover":
+            return run_recover(args)
         run_export(args)
         return 0
     except SafeFailure as failure:

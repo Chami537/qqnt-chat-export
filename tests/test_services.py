@@ -222,3 +222,50 @@ def test_batch_cancel_after_snapshot_marks_all_selected_cancelled(
     )
     assert [item.status for item in summary.outcomes] == ["cancelled", "cancelled"]
     assert not list((tmp_path / "work").rglob("*.db"))
+
+
+def test_changed_source_waits_for_qq_exit_before_retrying_snapshot(
+    synthetic_source: DatabaseSource, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    real_snapshot = services.create_snapshot
+    attempts = 0
+    stages = []
+
+    def changing_once(*args):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise SafeFailure("snapshot", "source_changed", "数据库发生变化")
+        assert "wait_qq_exit" in stages
+        return real_snapshot(*args)
+
+    monkeypatch.setattr(services, "create_snapshot", changing_once)
+    monkeypatch.setattr(services, "acquire_key_before_exit", lambda *args: bytearray(b"synthetic-password"))
+    monkeypatch.setattr(services, "wait_for_qq_exit", lambda *args, **kwargs: None)
+    index = services.scan_conversations(
+        synthetic_source, tmp_path / "work",
+        should_cancel=lambda: False,
+        on_progress=lambda item: stages.append(item.stage),
+    )
+    assert attempts == 2
+    assert len(index) == 2
+    assert not list((tmp_path / "work").rglob("*.db"))
+
+
+def test_changed_source_cancelled_while_waiting_leaves_no_database(
+    synthetic_source: DatabaseSource, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    key = bytearray(b"synthetic-password")
+    monkeypatch.setattr(
+        services, "create_snapshot",
+        lambda *args: (_ for _ in ()).throw(SafeFailure("snapshot", "source_changed", "变化")),
+    )
+    monkeypatch.setattr(services, "acquire_key_before_exit", lambda *args: key)
+    monkeypatch.setattr(services, "wait_for_qq_exit", lambda *args, **kwargs: (_ for _ in ()).throw(ExportCancelled()))
+    with pytest.raises(ExportCancelled):
+        services.scan_conversations(
+            synthetic_source, tmp_path / "work",
+            should_cancel=lambda: False, on_progress=lambda item: None,
+        )
+    assert not any(key)
+    assert not list((tmp_path / "work").rglob("*.db"))

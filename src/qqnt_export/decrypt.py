@@ -54,7 +54,7 @@ def _cipher_connection(path: Path, key: bytes, config: DecryptConfig):
 def verify_key(encrypted_db: Path, candidate: bytes, config: DecryptConfig) -> bool:
     try:
         with closing(_cipher_connection(encrypted_db, candidate, config)) as connection:
-            connection.execute("SELECT name FROM sqlite_master LIMIT 1").fetchone()
+            connection.execute("PRAGMA schema_version").fetchone()
         return True
     except Exception:
         return False
@@ -192,8 +192,13 @@ def decrypt_snapshot(
     except SafeFailure:
         plain.unlink(missing_ok=True)
         raise
-    except Exception:
+    except Exception as error:
         plain.unlink(missing_ok=True)
+        if "database disk image is malformed" in str(error).lower():
+            raise SafeFailure(
+                "decrypt", "malformed_database",
+                "QQ 数据库稳定副本无法通过完整性检查，可能存在损坏或格式不兼容",
+            ) from None
         raise SafeFailure("decrypt", "decryption_failed", "无法验证或解密 QQ 数据库") from None
     finally:
         for index in range(len(key_material)):

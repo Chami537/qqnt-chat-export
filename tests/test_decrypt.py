@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from qqnt_export.adapters.qqnt_9_9_27 import QQNT9927Adapter
-from qqnt_export.decrypt import ProcessMemoryKeyProvider, decrypt_snapshot
+from qqnt_export.decrypt import ProcessMemoryKeyProvider, decrypt_snapshot, sqlcipher_executor
 from qqnt_export.errors import SafeFailure
 from qqnt_export.models import DatabaseSource
 from qqnt_export.snapshot import Snapshot
@@ -81,3 +81,37 @@ def test_missing_sqlcipher_fails_before_process_memory_scan(monkeypatch: pytest.
     with pytest.raises(SafeFailure, match="SQLCipher"):
         provider.get_key(source, snapshot.encrypted_db)
     assert not scanned
+
+
+def test_sqlcipher_executor_exports_real_encrypted_database(tmp_path: Path) -> None:
+    cipher = pytest.importorskip("sqlcipher3.dbapi2")
+    config = QQNT9927Adapter().decrypt_config()
+    encrypted = tmp_path / "encrypted.db"
+    plain = tmp_path / "plain.db"
+    with cipher.connect(encrypted) as connection:
+        connection.execute(f"PRAGMA cipher_page_size={config.page_size}")
+        connection.execute("PRAGMA key='sample-password'")
+        connection.execute(f"PRAGMA kdf_iter={config.kdf_iter}")
+        connection.execute(f"PRAGMA cipher_hmac_algorithm={config.hmac_algorithm}")
+        connection.execute(f"PRAGMA cipher_kdf_algorithm={config.kdf_algorithm}")
+        connection.execute("CREATE TABLE sample (value TEXT)")
+        connection.execute("INSERT INTO sample VALUES ('synthetic')")
+    sqlcipher_executor(encrypted, plain, b"sample-password", config)
+    with sqlite3.connect(plain) as connection:
+        assert connection.execute("SELECT value FROM sample").fetchone()[0] == "synthetic"
+
+
+def test_malformed_encrypted_database_gets_distinct_safe_error(tmp_path: Path) -> None:
+    snapshot, source, work = fixtures(tmp_path)
+
+    def malformed_executor(encrypted, destination, key, config):
+        raise RuntimeError("database disk image is malformed")
+
+    with pytest.raises(SafeFailure) as caught:
+        decrypt_snapshot(
+            snapshot, source, work, QQNT9927Adapter(), FixedKeyProvider(),
+            cipher_executor=malformed_executor,
+        )
+    assert caught.value.code == "malformed_database"
+    assert "空闲" not in caught.value.public_message
+    assert not (work.root / "nt_msg_plain.db").exists()
