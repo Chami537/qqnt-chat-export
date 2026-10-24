@@ -16,6 +16,7 @@ from qqnt_export.gui.session_model import ConversationFilterModel, SessionTableM
 from qqnt_export.gui.window import MainWindow
 from qqnt_export.errors import ExportCancelled, SafeFailure
 from qqnt_export.models import DatabaseSource
+from qqnt_export.models import ExportResult
 from qqnt_export.services import BatchSummary, SessionOutcome, TaskProgress
 
 
@@ -210,6 +211,32 @@ def test_export_updates_result_on_main_thread(qapp, tmp_path):
     result_lines = [window.result_list.item(row).text() for row in range(window.result_list.count())]
     assert any("联系人甲" in line and "成功" in line for line in result_lines)
     assert any("群甲" in line and "失败" in line and "合成失败" in line for line in result_lines)
+    assert window.open_output_button.isVisible()
+    window.close()
+
+
+def test_recovery_controls_and_result_warning(qapp, tmp_path):
+    output = tmp_path / "recovered"
+    output.mkdir()
+    json_path = output / "chat_export.json"
+    md_path = output / "chat_export.md"
+    json_path.write_text("[]", encoding="utf-8")
+    md_path.write_text("# test", encoding="utf-8")
+
+    def fake_recover(source, work, destination, kind, selector, *, should_cancel, on_stage):
+        assert (kind, selector) == ("c2c", "100")
+        on_stage("export")
+        return ExportResult(json_path, md_path, 3)
+
+    window = MainWindow(recover_service=fake_recover)
+    window.show()
+    source = DatabaseSource(tmp_path / "nt_msg.db", "synthetic", "9.9.27", 1)
+    window.set_sources([source])
+    assert window.recover_button.isEnabled()
+    window.start_recovery(source, tmp_path / "work", tmp_path / "out", "100")
+    _wait_for(qapp, lambda: not window._task_running)
+    assert "3 条" in window.result_label.text()
+    assert "未验证整库" in window.result_label.text()
     assert window.open_output_button.isVisible()
     window.close()
 

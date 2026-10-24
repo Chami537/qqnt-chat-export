@@ -8,7 +8,7 @@ import os
 from PySide6.QtCore import Qt, Signal, QThread, QTimer
 from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
-    QLineEdit, QMainWindow, QMessageBox, QProgressBar, QPushButton, QListWidget,
+    QInputDialog, QLineEdit, QMainWindow, QMessageBox, QProgressBar, QPushButton, QListWidget,
     QTableView, QVBoxLayout, QWidget, QHeaderView,
 )
 
@@ -18,22 +18,25 @@ from qqnt_export.errors import SafeFailure
 from qqnt_export.source_selection import find_sources
 from qqnt_export.work_locations import suggest_work_root
 from qqnt_export.services import BatchSummary, TaskProgress, scan_conversations, export_batch
+from qqnt_export.recovery import recover_selected_conversation
 from .session_model import ConversationFilterModel, SessionTableModel
 from .theme import STYLE, ui_font
-from .workers import DiscoverWorker, ScanWorker, ExportWorker
+from .workers import DiscoverWorker, ScanWorker, ExportWorker, RecoveryWorker
 
 
 class MainWindow(QMainWindow):
     source_selected = Signal(object)
     scan_requested = Signal()
     export_requested = Signal()
+    recover_requested = Signal()
     cancel_requested = Signal()
 
-    def __init__(self, *, discover_service=find_sources, scan_service=scan_conversations, export_service=export_batch):
+    def __init__(self, *, discover_service=find_sources, scan_service=scan_conversations, export_service=export_batch, recover_service=recover_selected_conversation):
         super().__init__()
         self._discover_service = discover_service
         self._scan_service = scan_service
         self._export_service = export_service
+        self._recover_service = recover_service
         self._task_running = False
         self._close_pending = False
         self._thread: QThread | None = None
@@ -125,6 +128,10 @@ class MainWindow(QMainWindow):
         self.scan_button.setEnabled(False)
         self.scan_button.clicked.connect(self._request_scan)
         action_row.addWidget(self.scan_button)
+        self.recover_button = QPushButton("按号码恢复私聊")
+        self.recover_button.setEnabled(False)
+        self.recover_button.clicked.connect(self._request_recovery)
+        action_row.addWidget(self.recover_button)
         source_layout.addLayout(action_row)
         body.addWidget(source_card)
 
@@ -228,6 +235,7 @@ class MainWindow(QMainWindow):
         else:
             self.set_source_identity(None)
         self.scan_button.setEnabled(source is not None and not self._task_running)
+        self.recover_button.setEnabled(source is not None and not self._task_running)
 
     def set_sources(self, sources: Iterable[DatabaseSource]) -> None:
         self._sources = list(sources)
@@ -308,12 +316,39 @@ class MainWindow(QMainWindow):
         self.export_requested.emit()
         self.start_export(source, Path(self.work_edit.text()), Path(output), sorted(keys))
 
+    def _request_recovery(self) -> None:
+        source = self.selected_source()
+        if source is None or not self.work_edit.text().strip():
+            self.result_label.setText("请先选择数据源和非系统盘临时工作位置")
+            return
+        selector, accepted = QInputDialog.getText(self, "按号码恢复私聊", "对方 QQ 号：")
+        if not accepted:
+            return
+        selector = selector.strip()
+        if not selector.isascii() or not selector.isdigit() or not 1 <= len(selector) <= 20:
+            self.result_label.setText("请输入有效的 QQ 号")
+            return
+        output = QFileDialog.getExistingDirectory(self, "选择非系统盘输出位置")
+        if not output:
+            return
+        choice = QMessageBox.question(
+            self, "确认按号码恢复",
+            "程序会先验证密钥，再等待你正常退出 QQ，然后只读取这条私聊。"
+            "\n输出不会经过整库完整性校验，报告会标明此限制。",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if choice != QMessageBox.Yes:
+            return
+        self.recover_requested.emit()
+        self.start_recovery(source, Path(self.work_edit.text()), Path(output), selector)
+
     def _start_worker(self, worker, kind: str) -> None:
         if self._task_running:
             return
         self.cancel_event = worker.cancel_event
         self._task_running = True
         self.scan_button.setEnabled(False)
+        self.recover_button.setEnabled(False)
         self.export_button.setEnabled(False)
         self.source_combo.setEnabled(False)
         self.refresh_button.setEnabled(False)
@@ -322,7 +357,7 @@ class MainWindow(QMainWindow):
         self.cancel_button.setEnabled(True)
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 0)
-        self.result_label.setText({"scan": "正在扫描会话…", "export": "正在导出所选会话…", "discover": "正在查找 QQ 数据源…"}[kind])
+        self.result_label.setText({"scan": "正在扫描会话…", "export": "正在导出所选会话…", "recover": "正在按号码恢复私聊…", "discover": "正在查找 QQ 数据源…"}[kind])
         self.result_list.setVisible(False)
         self.result_list.clear()
         self.open_output_button.setVisible(False)
@@ -332,7 +367,7 @@ class MainWindow(QMainWindow):
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.progress.connect(self._on_progress)
-        worker.finished.connect({"scan": self._on_scan_result, "export": self._on_export_result, "discover": self._on_discovered}[kind])
+        worker.finished.connect({"scan": self._on_scan_result, "export": self._on_export_result, "recover": self._on_recovery_result, "discover": self._on_discovered}[kind])
         worker.failed.connect(self._on_discovery_failed if kind == "discover" else self._on_failed)
         worker.cancelled.connect(self._on_cancelled)
         worker.done.connect(thread.quit)
@@ -356,8 +391,14 @@ class MainWindow(QMainWindow):
         event = threading.Event()
         self._start_worker(ExportWorker(source, work_root, output_root, tuple(keys), event, self._export_service), "export")
 
+    def start_recovery(self, source: DatabaseSource, work_root: Path, output_root: Path, selector: str) -> None:
+        if self._task_running:
+            return
+        event = threading.Event()
+        self._start_worker(RecoveryWorker(source, work_root, output_root, selector, event, self._recover_service), "recover")
+
     def _on_progress(self, progress: TaskProgress) -> None:
-        labels = {"snapshot": "复制只读快照", "decrypt": "解密工作副本", "scan": "读取会话", "export": "导出会话", "cleanup": "清理临时工作目录"}
+        labels = {"snapshot": "复制只读快照", "key_probe": "正在验证密钥，请保持 QQ 运行", "wait_qq_exit": "请正常退出 QQ，程序将自动继续；可点击取消任务", "decrypt": "解密工作副本", "scan": "读取会话", "export": "导出会话", "cleanup": "清理临时工作目录"}
         self.result_label.setText(labels.get(progress.stage, "处理中") + (
             f" · {progress.completed}/{progress.total}" if progress.total else ""
         ))
@@ -367,7 +408,7 @@ class MainWindow(QMainWindow):
 
     def _on_scan_result(self, entries) -> None:
         self.set_sessions(entries)
-        self.result_label.setText(f"扫描完成：找到 {len(entries)} 条会话")
+        self.result_label.setText(f"扫描完成：找到 {len(entries)} 条会话。若刚退出 QQ，请重新登录后再导出")
 
     def _on_export_result(self, summary: BatchSummary) -> None:
         counts = {status: sum(item.status == status for item in summary.outcomes) for status in ("success", "failed", "cancelled")}
@@ -390,6 +431,11 @@ class MainWindow(QMainWindow):
         )
         self._last_batch_dir = summary.batch_dir
         self.open_output_button.setVisible(summary.batch_dir.is_dir())
+
+    def _on_recovery_result(self, result) -> None:
+        self.result_label.setText(f"按号码恢复完成：{result.message_count} 条；未验证整库完整性。")
+        self._last_batch_dir = result.json_path.parent
+        self.open_output_button.setVisible(result.json_path.parent.is_dir())
 
     def _on_discovered(self, sources) -> None:
         self.set_sources(sources)
@@ -417,6 +463,7 @@ class MainWindow(QMainWindow):
         self.refresh_button.setEnabled(True)
         self.source_browse_button.setEnabled(True)
         self.scan_button.setEnabled(self.selected_source() is not None)
+        self.recover_button.setEnabled(self.selected_source() is not None)
         self.export_button.setEnabled(bool(self.session_model.selected_keys()))
         if self._close_pending:
             QTimer.singleShot(0, self.close)

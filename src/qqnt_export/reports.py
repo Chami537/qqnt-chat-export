@@ -13,7 +13,7 @@ from .errors import SafeFailure
 SAFE_REPORT_KEYS = frozenset({"stage", "code", "qq_version", "adapter", "status", "message_count", "time_range", "quick_check"})
 _SAFE_TOKEN = re.compile(r"^[a-zA-Z0-9_.:-]{1,64}$")
 _SAFE_VERSION = re.compile(r"^[0-9]+(?:\.[0-9]+){1,3}$")
-_SAFE_STATUS = frozenset({"ok", "failed", "supported", "unsupported", "complete"})
+_SAFE_STATUS = frozenset({"ok", "failed", "supported", "unsupported", "complete", "partial"})
 
 
 def _safe_value(key: str, value: object) -> object:
@@ -26,7 +26,7 @@ def _safe_value(key: str, value: object) -> object:
     if key == "status":
         return value if value in _SAFE_STATUS else "[REDACTED]"
     if key == "quick_check":
-        return value if value in ("ok", "failed") else "[REDACTED]"
+        return value if value in ("ok", "failed", "not_run") else "[REDACTED]"
     if key == "time_range":
         if isinstance(value, list) and len(value) == 2 and all(isinstance(v, str) and len(v) <= 35 and re.fullmatch(r"[0-9T:+-]+", v) for v in value):
             return value

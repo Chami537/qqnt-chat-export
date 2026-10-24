@@ -17,6 +17,7 @@ from .errors import ExportCancelled, SafeFailure
 from .exporters import export_conversation
 from .models import DatabaseSource, ExportResult
 from .paths import validate_non_system_directory
+from .quiescent import acquire_key_before_exit, wait_for_qq_exit
 from .reports import write_safe_report
 from .schema import open_verified_database
 from .snapshot import create_snapshot
@@ -61,18 +62,47 @@ def open_working_database(
         on_stage("snapshot")
     if should_cancel is not None and should_cancel():
         raise ExportCancelled()
-    snapshot = create_snapshot(source, workspace, adapter)
-    if should_cancel is not None and should_cancel():
-        raise ExportCancelled()
-    if on_stage is not None:
-        on_stage("decrypt")
-    if should_cancel is not None and should_cancel():
-        raise ExportCancelled()
-    provider = ProcessMemoryKeyProvider(adapter.decrypt_config())
-    plain = decrypt_snapshot(snapshot, source, workspace, adapter, provider)
-    if should_cancel is not None and should_cancel():
-        raise ExportCancelled()
-    return open_verified_database(plain, adapter)
+    held_key = bytearray()
+    try:
+        try:
+            snapshot = create_snapshot(source, workspace, adapter)
+        except SafeFailure as failure:
+            if failure.code != "source_changed":
+                raise
+            if on_stage is not None:
+                on_stage("key_probe")
+            held_key = acquire_key_before_exit(source, workspace, adapter)
+            if should_cancel is not None and should_cancel():
+                raise ExportCancelled()
+            if on_stage is not None:
+                on_stage("wait_qq_exit")
+            wait_for_qq_exit(should_cancel or (lambda: False))
+            if should_cancel is not None and should_cancel():
+                raise ExportCancelled()
+            snapshot = create_snapshot(source, workspace, adapter)
+        if should_cancel is not None and should_cancel():
+            raise ExportCancelled()
+        if on_stage is not None:
+            on_stage("decrypt")
+        if should_cancel is not None and should_cancel():
+            raise ExportCancelled()
+        provider = _HeldKeyProvider(held_key) if held_key else ProcessMemoryKeyProvider(adapter.decrypt_config())
+        plain = decrypt_snapshot(snapshot, source, workspace, adapter, provider)
+        if should_cancel is not None and should_cancel():
+            raise ExportCancelled()
+        return open_verified_database(plain, adapter)
+    finally:
+        for index in range(len(held_key)):
+            held_key[index] = 0
+        held_key.clear()
+
+
+class _HeldKeyProvider:
+    def __init__(self, key: bytearray) -> None:
+        self.key = key
+
+    def get_key(self, source: DatabaseSource, encrypted_db: Path) -> bytearray:
+        return bytearray(self.key)
 
 
 def scan_conversations(
