@@ -89,6 +89,8 @@ qqnt-export cleanup --work-dir E:\QQExports\.qqnt-export-workspaces\<run-id>
 
 ```powershell
 .\scripts\build_windows.ps1 -BuildRoot E:\QQNTExportBuild -PythonExe E:\QQNTExportVenv\Scripts\python.exe
+$env:QQNT_WINDOWS_BUNDLE_DIR = "E:\QQNTExportBuild\dist\qqnt-export-gui"
+& E:\QQNTExportVenv\Scripts\python.exe -m pytest -q tests\test_windows_bundle.py
 ```
 
 程序位于 `E:\QQNTExportBuild\dist\qqnt-export-gui\qqnt-export-gui.exe`。构建脚本将临时文件与 PyInstaller 缓存放在指定目录；目录模式启动时不会像单文件模式那样每次向系统盘解包大型依赖。打包和分发前请阅读[第三方组件说明](THIRD_PARTY_NOTICES.md)。
